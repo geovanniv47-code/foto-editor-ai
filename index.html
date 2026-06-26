@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editor AI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111; color: #fff; font-family: sans-serif; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 20px; font-size: 1.4rem;
+         background: linear-gradient(90deg, #a78bfa, #ec4899);
+         -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .card { background: #1e1e1e; border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+    label { font-size: 0.85rem; color: #aaa; display: block; margin-bottom: 8px; }
+    input[type="file"] { width: 100%; padding: 10px; background: #2a2a2a;
+         border: 1px dashed #555; border-radius: 10px; color: #fff; cursor: pointer; }
+    textarea { width: 100%; background: #2a2a2a; border: 1px solid #333;
+         border-radius: 10px; color: #fff; padding: 12px; font-size: 0.9rem;
+         min-height: 120px; resize: vertical; }
+    button { width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 1rem;
+         font-weight: bold; cursor: pointer;
+         background: linear-gradient(90deg, #a78bfa, #ec4899); color: #fff; }
+    button:disabled { opacity: 0.5; }
+    #preview, #result { width: 100%; border-radius: 12px; margin-top: 12px; display: none; }
+    #status { text-align: center; color: #a78bfa; margin: 10px 0; font-size: 0.9rem; }
+    .by { text-align: center; margin-top: 24px; font-family: 'Dancing Script', cursive;
+         font-size: 1.1rem; background: linear-gradient(90deg, #a78bfa, #ec4899);
+         -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <h1>✨ Editor AI</h1>
+
+  <div class="card">
+    <label>📷 Sube tu imagen</label>
+    <input type="file" id="imgInput" accept="image/*">
+    <img id="preview" alt="preview">
+  </div>
+
+  <div class="card">
+    <label>✍️ Prompt de edición</label>
+    <textarea id="prompt" placeholder="Describe qué quieres cambiar en la imagen..."></textarea>
+  </div>
+
+  <button id="btn" onclick="editar()">🚀 Editar imagen</button>
+  <div id="status"></div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <label>🎨 Resultado</label>
+    <img id="result" alt="resultado">
+    <a id="download" download="editada.jpg" style="display:block;text-align:center;margin-top:12px;color:#a78bfa;">⬇️ Descargar</a>
+  </div>
+
+  <div class="by">by Gissele Geo</div>
+
+<script>
+  let imageBase64 = "";
+
+  document.getElementById("imgInput").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      imageBase64 = ev.target.result;
+      const prev = document.getElementById("preview");
+      prev.src = imageBase64;
+      prev.style.display = "block";
+    };
+    reader.readAsDataURL(file);
+  });
+
+  async function editar() {
+    if (!imageBase64) return alert("Sube una imagen primero");
+    const prompt = document.getElementById("prompt").value.trim();
+    if (!prompt) return alert("Escribe un prompt");
+
+    const btn = document.getElementById("btn");
+    const status = document.getElementById("status");
+    btn.disabled = true;
+    status.textContent = "⏳ Enviando a Replicate...";
+
+    try {
+      const res = await fetch("/.netlify/functions/edit", {
+        method: "POST",
+        body: JSON.stringify({ imageBase64, prompt })
+      });
+      const data = await res.json();
+
+      // Polling del resultado
+      const predId = data.id;
+      status.textContent = "🔄 Procesando... puede tardar 30-60 seg";
+      await pollResult(predId);
+
+    } catch (err) {
+      status.textContent = "❌ Error: " + err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function pollResult(id) {
+    const status = document.getElementById("status");
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const res = await fetch("/.netlify/functions/edit", {
+        method: "POST",
+        body: JSON.stringify({ pollId: id })
+      });
+      const data = await res.json();
+      if (data.status === "succeeded") {
+        const url = data.output;
+        const img = document.getElementById("result");
+        img.src = url;
+        img.style.display = "block";
+        document.getElementById("resultCard").style.display = "block";
+        document.getElementById("download").href = url;
+        status.textContent = "✅ ¡Listo!";
+        return;
+      }
+      if (data.status === "failed") {
+        status.textContent = "❌ Falló el proceso";
+        return;
+      }
+    }
+    status.textContent = "⏰ Tardó demasiado, intenta de nuevo";
+  }
+</script>
+</body>
+</html>
